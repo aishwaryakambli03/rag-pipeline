@@ -243,8 +243,8 @@ class RAGRetriever:
                     # Convert distance to similarity score (ChromaDB uses cosine distance)
                     similarity_score = 1 - distance
                     
-                    if similarity_score >= score_threshold:
-                        retrieved_docs.append({
+                    #if similarity_score >= score_threshold:
+                    retrieved_docs.append({
                             'id': doc_id,
                             'content': document,
                             'metadata': metadata,
@@ -263,9 +263,39 @@ class RAGRetriever:
             print(f"Error during retrieval: {e}")
             return []
 
+from langchain_groq import ChatGroq
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+### Initialize the Groq LLM (set your GROQ_API_KEY in environment)
+groq_api_key = os.getenv("GROQ_API_KEY")
+
+llm=ChatGroq(groq_api_key=groq_api_key,model_name="groq/compound-mini",temperature=0.1,max_tokens=1024)
+
+## 2. Simple RAG function: retrieve context + generate response
+def rag_simple(query,retriever,llm,top_k=3):
+    ## retriever the context
+    results=retriever.retrieve(query,top_k=top_k)
+    context="\n\n".join([doc['content'] for doc in results]) if results else ""
+    if not context:
+        return "No relevant context found to answer the question."
+    
+    ## generate the answwer using GROQ LLM
+    prompt=f"""Use the following context to answer the question concisely. Answer based only on this context. If unsure, say so.
+        Context:
+        {context}
+
+        Question: {query}
+
+        Answer:"""
+    
+    response=llm.invoke([prompt.format(context=context,query=query)])
+    return response.content
+
 # Process all PDFs in the data directory
 all_pdf_documents = process_all_pdfs("data")
-chunks=split_documents(all_pdf_documents)
+chunks=split_documents(all_pdf_documents,1000,200)
 embedding_manager=EmbeddingManager()
 vectorstore=VectorStore()
 
@@ -280,4 +310,6 @@ embeddings=embedding_manager.generate_embeddings(texts)
 vectorstore.add_documents(chunks,embeddings)
 
 rag_retriever=RAGRetriever(vectorstore,embedding_manager)
-print(rag_retriever.retrieve("What are anonymous methods?"))
+
+answer=rag_simple("What is extension method?",rag_retriever,llm)
+print(answer)
